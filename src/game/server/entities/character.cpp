@@ -42,6 +42,7 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 	m_LastPenalty = false;
 	m_LastBonus = false;
 
+	
 	m_pPlayer = pPlayer;
 	m_Pos = Pos;
 
@@ -735,7 +736,12 @@ void CCharacter::Tick()
 	if (m_Paused)
 		return;
 
+	if(GameServer()->m_pController->getTournamentPhase() == 0)
+		GetPlayer()->setTournamentTeam(-1);
+	m_inScoreField = false;
 	DDRaceTick();
+
+	
 
 	m_Core.m_Input = m_Input;
 	m_Core.Tick(true, false);
@@ -745,6 +751,7 @@ void CCharacter::Tick()
 
 	DDRacePostCoreTick();
 
+	
 	// Previnput
 	m_PrevInput = m_Input;
 
@@ -870,6 +877,8 @@ bool CCharacter::IncreaseArmor(int Amount)
 
 void CCharacter::Die(int Killer, int Weapon)
 {
+	m_pPlayer->m_Tournament_Team_Status = CPlayer::TOURNAMENT_NOTPARTICIPATING;
+
 	if(Server()->IsRecording(m_pPlayer->GetCID()))
 		Server()->StopRecord(m_pPlayer->GetCID());
 
@@ -1322,6 +1331,7 @@ void CCharacter::HandleSkippableTiles(int Index)
 void CCharacter::HandleTiles(int Index)
 {
 	CGameControllerDDRace* Controller = (CGameControllerDDRace*)GameServer()->m_pController;
+
 	int MapIndex = Index;
 	//int PureMapIndex = GameServer()->Collision()->GetPureMapIndex(m_Pos);
 	float Offset = 4.0f;
@@ -1589,13 +1599,9 @@ void CCharacter::HandleTiles(int Index)
 	}
 
 	// unlock team
-	else if(((m_TileIndex == TILE_UNLOCK_TEAM) || (m_TileFIndex == TILE_UNLOCK_TEAM)) && Teams()->TeamLocked(Team()))
+	else if(((m_TileIndex == TILE_UNLOCK_TEAM) || (m_TileFIndex == TILE_UNLOCK_TEAM)))
 	{
-		Teams()->SetTeamLock(Team(), false);
-
-		for(int i = 0; i < MAX_CLIENTS; i++)
-			if(Teams()->m_Core.Team(i) == Team())
-				GameServer()->SendChatTarget(i, "Your team was unlocked by an unlock team tile");
+		m_inScoreField = true;
 	}
 
 	// solo part
@@ -1738,32 +1744,12 @@ void CCharacter::HandleTiles(int Index)
 	}
 	else if(GameServer()->Collision()->IsSwitch(MapIndex) == TILE_JUMP)
 	{
-		int newJumps = GameServer()->Collision()->GetSwitchDelay(MapIndex);
+		int newTournamentTeam = GameServer()->Collision()->GetSwitchDelay(MapIndex);
 
-		if (newJumps != m_Core.m_Jumps)
-		{
-			char aBuf[256];
-			if(newJumps == 1)
-				str_format(aBuf, sizeof(aBuf), "You can jump %d time", newJumps);
-			else
-				str_format(aBuf, sizeof(aBuf), "You can jump %d times", newJumps);
-			GameServer()->SendChatTarget(GetPlayer()->GetCID(),aBuf);
-
-			if (newJumps == 0 && !m_SuperJump)
-			{
-				m_NeededFaketuning |= FAKETUNE_NOJUMP;
-				GameServer()->SendTuningParams(m_pPlayer->GetCID(), m_TuneZone); // update tunings
-			}
-			else if (m_Core.m_Jumps == 0)
-			{
-				m_NeededFaketuning &= ~FAKETUNE_NOJUMP;
-				GameServer()->SendTuningParams(m_pPlayer->GetCID(), m_TuneZone); // update tunings
-			}
-
-			m_Core.m_Jumps = newJumps;
-		}
+		if(GameServer()->m_pController->getTournamentPhase() == 0)
+			GetPlayer()->setTournamentTeam(newTournamentTeam);
 	}
-	else if(GameServer()->Collision()->IsSwitch(MapIndex) == TILE_PENALTY && !m_LastPenalty)
+	if(GameServer()->Collision()->IsSwitch(MapIndex) == TILE_PENALTY && !m_LastPenalty)
 	{
 		int min = GameServer()->Collision()->GetSwitchDelay(MapIndex);
 		int sec = GameServer()->Collision()->GetSwitchNumber(MapIndex);
@@ -1823,6 +1809,7 @@ void CCharacter::HandleTiles(int Index)
 	{
 		m_LastBonus = false;
 	}
+
 
 	int z = GameServer()->Collision()->IsTeleport(MapIndex);
 	if(!g_Config.m_SvOldTeleportHook && !g_Config.m_SvOldTeleportWeapons && z && Controller->m_TeleOuts[z-1].size())
@@ -1955,6 +1942,7 @@ void CCharacter::HandleTiles(int Index)
 		return;
 	}
 }
+
 
 void CCharacter::HandleTuneLayer()
 {
@@ -2262,4 +2250,45 @@ void CCharacter::Rescue()
 			UnFreeze();
 		}
 	}
+}
+
+void CCharacter::tele(int z) {
+	CGameControllerDDRace* Controller = (CGameControllerDDRace*)GameServer()->m_pController;
+	int Num = Controller->m_TeleOuts[z-1].size();
+
+	m_Core.m_Pos = Controller->m_TeleOuts[z-1][(!Num)?Num:rand() % Num];
+	m_Core.m_HookedPlayer = -1;
+	m_Core.m_HookState = HOOK_RETRACTED;
+	m_Core.m_TriggeredEvents |= COREEVENT_HOOK_RETRACT;
+	m_Core.m_HookPos = m_Core.m_Pos;
+	m_Core.m_Vel = vec2(0,0);
+}
+
+void CCharacter::teleToStart() {
+	vec2 SpawnPos;
+	if(GameServer()->m_pController->CanSpawn(m_pPlayer->GetTeam(), &SpawnPos))
+	{
+		m_Core.m_Pos = SpawnPos;
+		m_Core.m_Vel = vec2(0,0);
+
+		if(!g_Config.m_SvTeleportHoldHook)
+		{
+			m_Core.m_HookedPlayer = -1;
+			m_Core.m_HookState = HOOK_RETRACTED;
+			m_Core.m_TriggeredEvents |= COREEVENT_HOOK_RETRACT;
+			GameWorld()->ReleaseHooked(GetPlayer()->GetCID());
+			m_Core.m_HookPos = m_Core.m_Pos;
+		}
+	}
+}
+
+void CCharacter::teleToCheckpoint(int z) {
+	CGameControllerDDRace* Controller = (CGameControllerDDRace*)GameServer()->m_pController;
+	int Num = Controller->m_TeleCheckOuts[z-1].size();
+	m_Core.m_Pos = Controller->m_TeleCheckOuts[z-1][(!Num)?Num:rand() % Num];
+	m_Core.m_HookedPlayer = -1;
+	m_Core.m_HookState = HOOK_RETRACTED;
+	m_Core.m_TriggeredEvents |= COREEVENT_HOOK_RETRACT;
+	m_Core.m_HookPos = m_Core.m_Pos;
+	m_Core.m_Vel = vec2(0,0);
 }

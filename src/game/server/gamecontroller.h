@@ -3,7 +3,10 @@
 #ifndef GAME_SERVER_GAMECONTROLLER_H
 #define GAME_SERVER_GAMECONTROLLER_H
 
+
 #include <base/vmath.h>
+
+#include <vector>
 
 class CDoor;
 #ifdef _MSC_VER
@@ -14,6 +17,7 @@ typedef unsigned __int64 uint64_t;
 #else
 #include <stdint.h>
 #endif
+
 
 /*
 	Class: Game Controller
@@ -72,8 +76,15 @@ protected:
 	int m_UnbalancedTick;
 	bool m_ForceBalanced;
 
+	int m_Tournament_Phase;
+	std::vector <class tournamentTeam *> m_Tournament_Teams;
+
+
 public:
 	const char *m_pGameType;
+
+	void tournamentNewWave();
+	
 
 	//bool IsTeamplay() const;
 	//bool IsGameOver() const { return m_GameOverTick != -1; }
@@ -159,6 +170,74 @@ public:
 	// DDRace
 
 	float m_CurrentRecord;
+
+	int getCurrentRoundTick();
+
+	int getTournamentPhase();
+
+	class arena * m_arenas[32];
+
+	int tournamentLastPhaseStartTick;
+};
+
+class arena {
+	private:
+		class CGameContext *m_pGameServer;
+
+		struct teamInfo {
+			tournamentTeam * m_team;
+			int m_score;
+		} m_leftTeam, m_rightTeam;
+
+		int m_arenaStartTick;
+		int m_arenaId;
+
+		bool m_active;
+		static const int m_roundTime = 30;
+	
+		bool m_postScoreTick;	
+
+		void teleAllTeamsToStart();
+
+		
+	
+	public:
+		void newTeam(tournamentTeam * pTeamLeft, tournamentTeam * pTeamRight, int pArenaStartTick);
+		arena(int pArenaId, class CGameContext * pGameServer);
+		void tick();
+		void resetPositions();
+		void resetArena();
+		void activate();
+		void deactivate();
+		bool isActive();
+		bool isPlayable();
+
+		bool portA;
+		bool portB;
+
+};
+
+class tournamentTeam {
+	private:
+		std::vector <CPlayer *>  m_Member;
+		int m_TeamNumber;
+		
+		arena * currentArena;
+
+
+	public:
+		tournamentTeam(int pTeamNumber);
+		void addPlayer(CPlayer * pPlayer);
+		int getTeamNumber();
+		std::vector <CPlayer *> * getMembers();
+
+		int m_teamStatus;
+		
+		enum {
+			TEAM_INGAME = 0,
+			TEAM_WAITING = 1,
+			TEAM_LOST = 2
+		};
 };
 
 #endif

@@ -44,7 +44,6 @@ public:
 	CCharacter *GetCharacter();
 
 	void FindDuplicateSkins();
-	void SpectatePlayerName(const char *pName);
 
 	//---------------------------------------------------------
 	// this is used for snapping so we know how we can clip the view for the player
@@ -116,6 +115,32 @@ public:
 		int m_Max;
 	} m_Latency;
 
+	int m_Tournament_NormalColor_Body;
+	int m_Tournament_NormalColor_Feet;
+	int m_Tournament_CustomColor;
+
+	int getTournamentNormalColorBody();
+	int getTournamentNormalColorFeet();
+	int getTournamentCustomColor();
+
+	int getTournamentTeam();
+	void setTournamentTeam(int pTeam);
+
+	void lockTournamentTeam();
+	int m_Tournament_Team_Status;
+	tournamentTeam * m_myTournamentTeam;
+
+
+	int m_Tournament_Team;	
+	
+	
+
+	enum {
+		TOURNAMENT_NOTPARTICIPATING=-1,
+		TOURNAMENT_INTEAM=0,
+		TOURNAMENT_ALONE=1
+	};
+
 private:
 	CCharacter *m_pCharacter;
 	int m_NumInputs;
@@ -136,7 +161,9 @@ private:
 
 	// DDRace
 
+
 public:
+
 	enum
 	{
 		PAUSE_NONE=0,
@@ -192,6 +219,7 @@ public:
 	int m_DefEmoteReset;
 	bool m_Halloween;
 	bool m_FirstPacket;
+
 #if defined(CONF_SQL)
 	int64 m_LastSQLQuery;
 #endif

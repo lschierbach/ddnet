@@ -1667,9 +1667,16 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 			Server()->SetClientClan(ClientID, pMsg->m_pClan);
 			Server()->SetClientCountry(ClientID, pMsg->m_Country);
 			str_copy(pPlayer->m_TeeInfos.m_SkinName, pMsg->m_pSkin, sizeof(pPlayer->m_TeeInfos.m_SkinName));
+
 			pPlayer->m_TeeInfos.m_UseCustomColor = pMsg->m_UseCustomColor;
 			pPlayer->m_TeeInfos.m_ColorBody = pMsg->m_ColorBody;
 			pPlayer->m_TeeInfos.m_ColorFeet = pMsg->m_ColorFeet;
+
+			if(m_pController->getTournamentPhase() == 0) {
+				pPlayer->m_Tournament_NormalColor_Body = pMsg->m_ColorBody;
+				pPlayer->m_Tournament_NormalColor_Feet = pMsg->m_ColorFeet;
+				pPlayer->m_Tournament_CustomColor = pMsg->m_UseCustomColor;
+			}
 			//m_pController->OnPlayerInfoChange(pPlayer);
 		}
 		else if (MsgID == NETMSGTYPE_CL_EMOTICON && !m_World.m_Paused)
@@ -1771,6 +1778,10 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 		pPlayer->m_TeeInfos.m_UseCustomColor = pMsg->m_UseCustomColor;
 		pPlayer->m_TeeInfos.m_ColorBody = pMsg->m_ColorBody;
 		pPlayer->m_TeeInfos.m_ColorFeet = pMsg->m_ColorFeet;
+
+		pPlayer->m_Tournament_NormalColor_Body = pMsg->m_ColorBody;
+		pPlayer->m_Tournament_NormalColor_Feet = pMsg->m_ColorFeet;
+		pPlayer->m_Tournament_CustomColor = pMsg->m_UseCustomColor;
 		//m_pController->OnPlayerInfoChange(pPlayer);
 
 		// send clear vote options

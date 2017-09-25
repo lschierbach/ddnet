@@ -83,6 +83,7 @@ public:
 
 	void Rescue();
 
+
 	int NeededFaketuning() {return m_NeededFaketuning;}
 	bool IsAlive() const { return m_Alive; }
 	bool IsPaused() const { return m_Paused; }
@@ -91,7 +92,7 @@ public:
 private:
 	// player controlling this character
 	class CPlayer *m_pPlayer;
-
+	
 	bool m_Alive;
 	bool m_Paused;
 	int m_NeededFaketuning;
@@ -119,6 +120,7 @@ private:
 
 	int m_EmoteType;
 	int m_EmoteStop;
+
 
 	// last tick that the player took any action ie some input
 	int m_LastAction;
@@ -273,6 +275,13 @@ public:
 	void SetNinjaActivationDir(vec2 ActivationDir) { m_Ninja.m_ActivationDir = ActivationDir; };
 	void SetNinjaActivationTick(int ActivationTick) { m_Ninja.m_ActivationTick = ActivationTick; };
 	void SetNinjaCurrentMoveTime(int CurrentMoveTime) { m_Ninja.m_CurrentMoveTime = CurrentMoveTime; };
+
+	void tele(int z);
+	void teleToStart();
+	void teleToCheckpoint(int z);
+
+
+	bool m_inScoreField;
 };
 
 enum

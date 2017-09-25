@@ -7,6 +7,7 @@
 #include <engine/console.h>
 #include <engine/shared/memheap.h>
 
+
 #include <game/layers.h>
 #include <game/voting.h>
 
@@ -14,6 +15,7 @@
 #include "gamecontroller.h"
 #include "gameworld.h"
 #include "player.h"
+
 
 #include "score.h"
 #ifdef _MSC_VER
@@ -231,7 +233,6 @@ public:
 	bool PlayerExists(int ClientID) { return m_apPlayers[ClientID]; };
 
 private:
-
 	bool m_VoteWillPass;
 	class IScore *m_pScore;
 

@@ -2,7 +2,6 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <engine/shared/config.h>
 #include <game/mapitems.h>
-
 #include <game/generated/protocol.h>
 
 #include "entities/pickup.h"
@@ -16,14 +15,13 @@
 #include "entities/plasma.h"
 #include "entities/door.h"
 #include <game/layers.h>
-
+#include <game/server/gamemodes/DDRace.h>
 
 IGameController::IGameController(class CGameContext *pGameServer)
 {
 	m_pGameServer = pGameServer;
 	m_pServer = m_pGameServer->Server();
 	m_pGameType = "unknown";
-
 	//
 	DoWarmup(g_Config.m_SvWarmup);
 	m_GameOverTick = -1;
@@ -404,6 +402,15 @@ const char *IGameController::GetTeamName(int Team)
 void IGameController::StartRound()
 {
 	ResetGame();
+	for(int i = 0; i < 32; i++) {
+		m_arenas[i]->deactivate();
+	}
+	for (std::vector<tournamentTeam *>::iterator it = m_Tournament_Teams.begin() ; it != m_Tournament_Teams.end(); it++)
+	{
+		if(*it)
+			delete (*it);
+    } 
+    m_Tournament_Teams.clear();
 
 	m_RoundStartTick = Server()->Tick();
 	m_SuddenDeath = 0;
@@ -416,6 +423,17 @@ void IGameController::StartRound()
 	char aBuf[256];
 	str_format(aBuf, sizeof(aBuf), "start round type='%s' teamplay='%d'", m_pGameType, m_GameFlags&GAMEFLAG_TEAMS);
 	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+
+	m_Tournament_Phase = 0;
+}
+
+
+int IGameController::getTournamentPhase() {
+	return m_Tournament_Phase;
+}
+
+int IGameController::getCurrentRoundTick() {
+	return Server()->Tick() - m_RoundStartTick;
 }
 
 void IGameController::ChangeMap(const char *pToMap)
@@ -605,6 +623,7 @@ bool IGameController::CanBeMovedOnBalance(int ClientID)
 	return true;
 }
 
+
 void IGameController::Tick()
 {
 	// do warmup
@@ -624,6 +643,53 @@ void IGameController::Tick()
 			StartRound();
 			m_RoundCount++;
 		}
+	}
+	//GameServer()->SendChat(-1, CGameContext::CHAT_ALL, aBuf, Server()->Tick());
+	//GameServer()->SendChat(-1, CGameContext::CHAT_ALL, aBuf, Server()->Tick());
+
+	for(int i = 0; i < 32; i++) {
+		if(m_arenas[i])
+			m_arenas[i]->tick();
+	}
+
+	if(getCurrentRoundTick() >= Server()->TickSpeed() * 15 && m_Tournament_Phase == 0) {
+		/*
+			Teams zuordnen
+		*/
+		for(int i = 0; i < MAX_CLIENTS; i++) {
+			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS)
+			{
+				bool foundTeam = false;
+				GameServer()->m_apPlayers[i]->lockTournamentTeam();
+				if(GameServer()->m_apPlayers[i]->getTournamentTeam() != -1) {
+					for(std::vector<tournamentTeam *>::iterator l = m_Tournament_Teams.begin(); l != m_Tournament_Teams.end(); l++) {
+						if((*l)->getTeamNumber() == GameServer()->m_apPlayers[i]->getTournamentTeam()) {
+							foundTeam = true;
+							(*l)->addPlayer(GameServer()->m_apPlayers[i]);
+							GameServer()->m_apPlayers[i]->m_myTournamentTeam = (*l);
+							GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_ALONE;
+							break;
+						}
+					}
+				}
+				if(!foundTeam) {
+					tournamentTeam *newTeam = new tournamentTeam(GameServer()->m_apPlayers[i]->getTournamentTeam());
+					newTeam->addPlayer(GameServer()->m_apPlayers[i]);
+					m_Tournament_Teams.push_back(newTeam);
+					GameServer()->m_apPlayers[i]->m_myTournamentTeam = newTeam;
+					GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+				}
+			}
+		}
+		
+		tournamentNewWave();
+
+		m_Tournament_Phase = 1;
+	}
+
+	if(m_Tournament_Phase == 2) {
+		if(Server()->Tick() - tournamentLastPhaseStartTick >= Server()->TickSpeed() * 10)
+			StartRound();
 	}
 
 	/*
@@ -954,4 +1020,251 @@ int IGameController::ClampTeam(int Team)
 	//if(IsTeamplay())
 		//return Team&1;
 	return 0;
+}
+
+void IGameController::tournamentNewWave() {
+	tournamentTeam * lastTeam;
+	bool lastTeamb = false;
+	bool atLeastOneFightOrWait = false;
+	for(std::vector<tournamentTeam *>::iterator l = m_Tournament_Teams.begin(); l != m_Tournament_Teams.end(); l++) {
+		if((*l)->m_teamStatus == tournamentTeam::TEAM_WAITING) {
+			if(lastTeamb) {
+				int i;
+				bool arenaFound = false;
+				for(i = 0; i < 32; i++) {
+					if(m_arenas[i]->isPlayable() && !m_arenas[i]->isActive()) {
+						arenaFound = true;
+						break;
+					}
+				}
+				if(!arenaFound)
+					continue;
+				m_arenas[i]->newTeam(lastTeam, (*l), Server()->Tick());
+				lastTeamb = false;
+				atLeastOneFightOrWait = true;
+			} else {
+				lastTeam = (*l);
+				lastTeamb = true;
+			}
+		} else if ((*l)->m_teamStatus == tournamentTeam::TEAM_INGAME)
+			atLeastOneFightOrWait = true;
+	}
+
+	if(!atLeastOneFightOrWait) {
+		m_Tournament_Phase = 2;
+		tournamentLastPhaseStartTick = Server()->Tick();
+		for(int i = 0; i < MAX_CLIENTS; ++i) {
+			if(GameServer()->m_apPlayers[i]) {
+				if(GameServer()->m_apPlayers[i]->GetCharacter()) {
+					GameServer()->m_apPlayers[i]->GetCharacter()->teleToCheckpoint(3);
+				}
+			}
+		}
+		for(std::vector<tournamentTeam *>::iterator l = m_Tournament_Teams.begin(); l != m_Tournament_Teams.end(); l++) {
+			for(std::vector<CPlayer *>::iterator k = (*l)->getMembers()->begin(); k != (*l)->getMembers()->end(); k++) {
+				if((*k))
+					if((*k)->GetCharacter())
+						(*k)->GetCharacter()->teleToCheckpoint(1);
+			}
+		}
+		for(std::vector<CPlayer *>::iterator k = lastTeam->getMembers()->begin(); k != lastTeam->getMembers()->end(); k++) {
+			if((*k))
+				if((*k)->GetCharacter())
+					(*k)->GetCharacter()->teleToCheckpoint(2);
+		}
+	}
+}
+
+tournamentTeam::tournamentTeam(int pTeamNumber) { 
+	m_TeamNumber = pTeamNumber;
+	m_teamStatus = tournamentTeam::TEAM_WAITING;
+}
+
+void tournamentTeam::addPlayer(CPlayer * pPlayer) {
+	m_Member.push_back(pPlayer);
+}
+
+int tournamentTeam::getTeamNumber() {
+	return m_TeamNumber;
+}
+
+std::vector <CPlayer *> * tournamentTeam::getMembers() {
+	return &m_Member;
+}
+
+arena::arena(int pArenaId, class CGameContext * pGameServer) {
+	portA = false;
+	portB = false;
+	m_pGameServer = pGameServer;
+	m_arenaId = pArenaId;
+	m_active = false;
+	m_postScoreTick = false;
+}
+
+void arena::newTeam(tournamentTeam * pTeamLeft, tournamentTeam * pTeamRight, int pArenaStartTick) {
+	m_leftTeam.m_team = pTeamLeft;
+	m_rightTeam.m_team = pTeamRight;
+	pTeamLeft->m_teamStatus = tournamentTeam::TEAM_INGAME;
+	pTeamRight->m_teamStatus = tournamentTeam::TEAM_INGAME;
+	m_leftTeam.m_score = 0;
+	m_rightTeam.m_score = 0;
+	m_arenaStartTick = pArenaStartTick;
+	m_active = true;
+	m_postScoreTick = false;
+
+	resetPositions();
+}
+
+void arena::resetPositions() {
+	if(m_leftTeam.m_score == 3) {
+		m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_WAITING;
+		m_rightTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		teleAllTeamsToStart();
+		deactivate();
+		m_pGameServer->m_pController->tournamentNewWave();
+		return;
+	} else if(m_rightTeam.m_score == 3) {
+		m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		m_rightTeam.m_team->m_teamStatus = tournamentTeam::TEAM_WAITING;
+		teleAllTeamsToStart();
+		deactivate();
+		m_pGameServer->m_pController->tournamentNewWave();
+		return;
+	}
+
+	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					(*k)->GetCharacter()->tele((m_arenaId*2)+1);
+					(*k)->GetCharacter()->Freeze();
+				}
+			}
+		}
+	}
+	for(std::vector<CPlayer *>::iterator k = m_rightTeam.m_team->getMembers()->begin(); k != m_rightTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					(*k)->GetCharacter()->tele((m_arenaId*2)+2);
+					(*k)->GetCharacter()->Freeze();
+				}
+			}
+		}
+	}
+}
+
+void arena::teleAllTeamsToStart() {
+	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter())
+					(*k)->GetCharacter()->teleToStart();
+			}
+		}
+	}
+	for(std::vector<CPlayer *>::iterator k = m_rightTeam.m_team->getMembers()->begin(); k != m_rightTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter())
+					(*k)->GetCharacter()->teleToStart();
+			}
+		}
+	}
+}
+
+void arena::tick() {
+	if(!m_active) return;
+
+	bool hasPlayerA = false;
+	bool hasPlayerB = false;
+
+	if((int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()) >= 90) {
+		if(m_leftTeam.m_score > m_rightTeam.m_score)
+			m_leftTeam.m_score = 3;
+		else if(m_leftTeam.m_score < m_rightTeam.m_score)
+			m_rightTeam.m_score = 3;
+		else if(rand()%(100-0 + 1) + 0 > 50)
+			m_leftTeam.m_score = 3;
+		else 
+			m_rightTeam.m_score = 3;
+		resetPositions();
+		return;
+	}
+
+	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					hasPlayerA = true;
+					if((*k)->GetCharacter()->m_inScoreField && !m_postScoreTick) {
+						m_rightTeam.m_score++;
+						m_postScoreTick = true;
+						resetPositions();
+						return;
+					}
+					char aBuf[256];
+					str_format(aBuf, sizeof(aBuf), "%d:%d - %d", m_leftTeam.m_score, m_rightTeam.m_score, 90 - (int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()));
+					m_pGameServer->SendBroadcast(aBuf, (*k)->GetCID());
+				}
+			}
+		}
+	}
+
+	for(std::vector<CPlayer *>::iterator k = m_rightTeam.m_team->getMembers()->begin(); k != m_rightTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					hasPlayerB = true;
+					if((*k)->GetCharacter()->m_inScoreField && !m_postScoreTick) {
+						m_leftTeam.m_score++;
+						m_postScoreTick = true;
+						resetPositions();
+						return;
+					}
+					char aBuf[256];
+					str_format(aBuf, sizeof(aBuf), "%d:%d - %d", m_rightTeam.m_score, m_leftTeam.m_score, 90 - (int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()));
+					m_pGameServer->SendBroadcast(aBuf, (*k)->GetCID());
+				}
+			}
+		}
+	}
+
+	if(!hasPlayerA && hasPlayerB) {
+		m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		m_rightTeam.m_team->m_teamStatus = tournamentTeam::TEAM_WAITING;
+		teleAllTeamsToStart();
+		deactivate();
+		m_pGameServer->m_pController->tournamentNewWave();
+	} else if(hasPlayerA && !hasPlayerB) {
+		m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_WAITING;
+		m_rightTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		teleAllTeamsToStart();
+		deactivate();
+		m_pGameServer->m_pController->tournamentNewWave();
+	} else if(!hasPlayerA && !hasPlayerB) {
+		 m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		m_rightTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;
+		teleAllTeamsToStart();
+		deactivate();
+		m_pGameServer->m_pController->tournamentNewWave();
+	}
+	if(m_postScoreTick)
+		m_postScoreTick = false;
+}
+
+void arena::activate() {
+	m_active = true;
+}
+
+void arena::deactivate() {
+	m_active = false;
+}
+
+bool arena::isActive() {
+	return m_active;
+}
+
+bool arena::isPlayable() {
+	return portA && portB;
 }

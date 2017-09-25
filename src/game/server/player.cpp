@@ -48,6 +48,11 @@ void CPlayer::Reset()
 	m_LastInvited = 0;
 	m_WeakHookSpawn = false;
 
+	m_Tournament_Team = -1;
+	m_Tournament_Team_Status = TOURNAMENT_NOTPARTICIPATING;
+
+	m_myTournamentTeam = 0;
+
 	int* idMap = Server()->GetIdMap(m_ClientID);
 	for (int i = 1;i < VANILLA_MAX_CLIENTS;i++)
 	{
@@ -113,7 +118,9 @@ void CPlayer::Reset()
 	m_LastPause = 0;
 	m_Score = -9999;
 	m_HasFinishScore = false;
+	
 
+	
 	// Variable initialized:
 	m_Last_Team = 0;
 #if defined(CONF_SQL)
@@ -131,6 +138,12 @@ void CPlayer::Reset()
 		m_FirstVoteTick = Now + g_Config.m_SvJoinVoteDelay * TickSpeed;
 	else
 		m_FirstVoteTick = Now;
+}
+
+void CPlayer::lockTournamentTeam() {
+	if(m_Tournament_Team == -1) {
+		m_Tournament_Team_Status = TOURNAMENT_ALONE;
+	} else m_Tournament_Team_Status = TOURNAMENT_INTEAM;
 }
 
 void CPlayer::Tick()
@@ -152,6 +165,65 @@ void CPlayer::Tick()
 		m_ChatScore--;
 
 	Server()->SetClientScore(m_ClientID, m_Score);
+
+	if(GameServer()->m_pController->getTournamentPhase() == 0) {
+		GameServer()->SendBroadcast("Prepare for battle!", m_ClientID);
+	}
+
+	if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE || GameServer()->m_pController->getTournamentPhase() == 0) {
+		if(m_Tournament_Team == -1) {
+			m_TeeInfos.m_ColorFeet = getTournamentNormalColorFeet();
+			m_TeeInfos.m_ColorBody = getTournamentNormalColorBody();
+			m_TeeInfos.m_UseCustomColor = getTournamentCustomColor();
+		} 
+		if(m_Tournament_Team == 0) {
+			m_TeeInfos.m_ColorBody = 65280; //Rot
+			m_TeeInfos.m_ColorFeet = 65280;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 1) {
+			m_TeeInfos.m_ColorBody = 5570304; //Grün
+			m_TeeInfos.m_ColorFeet = 5570304;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 2) {
+			m_TeeInfos.m_ColorBody = 2948864; //Gelb
+			m_TeeInfos.m_ColorFeet = 2948864;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 3) {
+			m_TeeInfos.m_ColorBody = 11009792; //Blau
+			m_TeeInfos.m_ColorFeet = 11009792;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 4) {
+			m_TeeInfos.m_ColorBody = 14679808; //Pink
+			m_TeeInfos.m_ColorFeet = 14679808;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+	}
+
+	if(GameServer()->m_pController->getTournamentPhase() == 1) {
+		if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE) {
+			if(m_myTournamentTeam) {
+				if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_LOST)
+					GameServer()->SendBroadcast("You lost >: better luck next time!", m_ClientID);
+				else if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_WAITING)
+					GameServer()->SendBroadcast("Waiting for a new match...", m_ClientID);
+			}
+		} else GameServer()->SendBroadcast("Waiting for a new game to start!...", m_ClientID);
+	}
+
+	if(GameServer()->m_pController->getTournamentPhase() == 2) {
+		if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE) {
+			if(m_myTournamentTeam) {
+				if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_LOST)
+					GameServer()->SendBroadcast("You lost >: better luck next time!", m_ClientID);
+				else if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_WAITING)
+					GameServer()->SendBroadcast("You won! Congratulations", m_ClientID);
+			}
+		} else GameServer()->SendBroadcast("The new game will start soon...", m_ClientID);
+	}
 
 	// do latency stuff
 	{
@@ -318,6 +390,26 @@ void CPlayer::Snap(int SnappingClient)
 		pPlayerInfo->m_Score = abs(m_Score) * -1;
 }
 
+int CPlayer::getTournamentNormalColorBody() {
+	return m_Tournament_NormalColor_Body;
+}
+
+int CPlayer::getTournamentNormalColorFeet() {
+	return m_Tournament_NormalColor_Feet;
+}
+
+int CPlayer::getTournamentCustomColor() {
+	return m_Tournament_CustomColor;
+}
+
+int CPlayer::getTournamentTeam() {
+	return m_Tournament_Team;
+}
+
+void CPlayer::setTournamentTeam(int pTeam) {
+	m_Tournament_Team = pTeam;
+}
+
 void CPlayer::FakeSnap()
 {
 	// This is problematic when it's sent before we know whether it's a non-64-player-client
@@ -462,6 +554,7 @@ void CPlayer::ThreadKillCharacter(int Weapon)
 
 void CPlayer::KillCharacter(int Weapon)
 {
+	m_Tournament_Team_Status = TOURNAMENT_NOTPARTICIPATING;
 	if(m_pCharacter)
 	{
 		m_pCharacter->Die(m_ClientID, Weapon);
@@ -544,6 +637,9 @@ void CPlayer::TryRespawn()
 	m_Spawning = false;
 	m_pCharacter = new(m_ClientID) CCharacter(&GameServer()->m_World);
 	m_pCharacter->Spawn(this, SpawnPos);
+	m_TeeInfos.m_ColorFeet = getTournamentNormalColorFeet();
+	m_TeeInfos.m_ColorBody = getTournamentNormalColorBody();
+	m_TeeInfos.m_UseCustomColor = getTournamentCustomColor();
 	GameServer()->CreatePlayerSpawn(SpawnPos, m_pCharacter->Teams()->TeamMask(m_pCharacter->Team(), -1, m_ClientID));
 
 	if(g_Config.m_SvTeam == 3)
@@ -728,13 +824,13 @@ void CPlayer::FindDuplicateSkins()
 {
 	if (m_TeeInfos.m_UseCustomColor == 0 && !m_StolenSkin) return;
 	m_StolenSkin = 0;
-	for(int i = 0; i < MAX_CLIENTS; ++i)
+	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
-		if(i == m_ClientID) continue;
+		if (i == m_ClientID) continue;
 		if(GameServer()->m_apPlayers[i])
 		{
-			if(GameServer()->m_apPlayers[i]->m_StolenSkin) continue;
-			if((GameServer()->m_apPlayers[i]->m_TeeInfos.m_UseCustomColor == m_TeeInfos.m_UseCustomColor) &&
+			if (GameServer()->m_apPlayers[i]->m_StolenSkin) continue;
+			if ((GameServer()->m_apPlayers[i]->m_TeeInfos.m_UseCustomColor == m_TeeInfos.m_UseCustomColor) &&
 			(GameServer()->m_apPlayers[i]->m_TeeInfos.m_ColorFeet == m_TeeInfos.m_ColorFeet) &&
 			(GameServer()->m_apPlayers[i]->m_TeeInfos.m_ColorBody == m_TeeInfos.m_ColorBody) &&
 			!str_comp(GameServer()->m_apPlayers[i]->m_TeeInfos.m_SkinName, m_TeeInfos.m_SkinName))
@@ -742,21 +838,6 @@ void CPlayer::FindDuplicateSkins()
 				m_StolenSkin = 1;
 				return;
 			}
-		}
-	}
-}
-
-void CPlayer::SpectatePlayerName(const char *pName)
-{
-	if(!pName)
-		return;
-
-	for(int i = 0; i < MAX_CLIENTS; ++i)
-	{
-		if(i != m_ClientID && Server()->ClientIngame(i) && !str_comp(pName, Server()->ClientName(i)))
-		{
-			m_SpectatorID = i;
-			return;
 		}
 	}
 }

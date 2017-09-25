@@ -8,13 +8,18 @@
 #include <game/server/gamecontext.h>
 #include "DDRace.h"
 #include "gamemode.h"
+#include <math.h>
 
 CGameControllerDDRace::CGameControllerDDRace(class CGameContext *pGameServer) :
 		IGameController(pGameServer), m_Teams(pGameServer)
 {
 	m_pGameType = g_Config.m_SvTestingCommands ? TEST_NAME : GAME_NAME;
 
+	for(int i = 0; i < 32; i++) {
+		m_arenas[i] = new arena(i, pGameServer);
+	}
 	InitTeleporter();
+	
 }
 
 CGameControllerDDRace::~CGameControllerDDRace()
@@ -44,6 +49,14 @@ void CGameControllerDDRace::InitTeleporter()
 			{
 				m_TeleOuts[Number - 1].push_back(
 						vec2(i % Width * 32 + 16, i / Width * 32 + 16));
+
+				if(Number - 1 < 64) {
+					
+					int arenaNumber = ceil (Number / 2.0);
+					if(Number % 2 == 0)
+						m_arenas[arenaNumber-1]->portA = true;
+					else m_arenas[arenaNumber-1]->portB = true;
+				}
 			}
 			else if (Type == TILE_TELECHECKOUT)
 			{
