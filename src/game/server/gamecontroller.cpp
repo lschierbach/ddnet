@@ -39,7 +39,7 @@ IGameController::IGameController(class CGameContext *pGameServer)
 	m_aNumSpawnPoints[0] = 0;
 	m_aNumSpawnPoints[1] = 0;
 	m_aNumSpawnPoints[2] = 0;
-
+	m_Tournament_Phase = -1;
 	m_CurrentRecord = 0;
 }
 
@@ -423,8 +423,17 @@ void IGameController::StartRound()
 	char aBuf[256];
 	str_format(aBuf, sizeof(aBuf), "start round type='%s' teamplay='%d'", m_pGameType, m_GameFlags&GAMEFLAG_TEAMS);
 	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+	int numPlayers = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++) {
+		if(GameServer()->m_apPlayers[i])
+			if(GameServer()->m_apPlayers[i]->GetCharacter())
+				numPlayers++;
+	}
 
-	m_Tournament_Phase = 0;
+	if(numPlayers > 1)
+		m_Tournament_Phase = 0;
+	else 
+		m_Tournament_Phase = -1;
 }
 
 
@@ -580,7 +589,21 @@ void IGameController::OnCharacterSpawn(class CCharacter *pChr)
 	// give default weapons
 	pChr->GiveWeapon(WEAPON_HAMMER);
 	pChr->GiveWeapon(WEAPON_GUN);
+
+	if(m_Tournament_Phase == -1) {
+		int numPlayers = 0;
+		for(int i = 0; i < MAX_CLIENTS; i++) {
+			if(GameServer()->m_apPlayers[i])
+				if(GameServer()->m_apPlayers[i]->GetCharacter())
+					numPlayers++;
+		}
+		if(numPlayers > 1) {
+			StartRound();
+			m_Tournament_Phase = 0;
+		}
+	}
 }
+
 
 void IGameController::DoWarmup(int Seconds)
 {
@@ -656,35 +679,47 @@ void IGameController::Tick()
 		/*
 			Teams zuordnen
 		*/
+		int numPlayers = 0;
 		for(int i = 0; i < MAX_CLIENTS; i++) {
-			if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS)
-			{
-				bool foundTeam = false;
-				GameServer()->m_apPlayers[i]->lockTournamentTeam();
-				if(GameServer()->m_apPlayers[i]->getTournamentTeam() != -1) {
-					for(std::vector<tournamentTeam *>::iterator l = m_Tournament_Teams.begin(); l != m_Tournament_Teams.end(); l++) {
-						if((*l)->getTeamNumber() == GameServer()->m_apPlayers[i]->getTournamentTeam()) {
-							foundTeam = true;
-							(*l)->addPlayer(GameServer()->m_apPlayers[i]);
-							GameServer()->m_apPlayers[i]->m_myTournamentTeam = (*l);
-							GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_ALONE;
-							break;
+			if(GameServer()->m_apPlayers[i])
+				if(GameServer()->m_apPlayers[i]->GetCharacter())
+					numPlayers++;
+		}
+		if(numPlayers < 2) {
+			StartRound();
+			m_Tournament_Phase = -1;
+		}
+		else {
+			for(int i = 0; i < MAX_CLIENTS; i++) {
+				if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS)
+				{
+					bool foundTeam = false;
+					GameServer()->m_apPlayers[i]->lockTournamentTeam();
+					if(GameServer()->m_apPlayers[i]->getTournamentTeam() != -1) {
+						for(std::vector<tournamentTeam *>::iterator l = m_Tournament_Teams.begin(); l != m_Tournament_Teams.end(); l++) {
+							if((*l)->getTeamNumber() == GameServer()->m_apPlayers[i]->getTournamentTeam()) {
+								foundTeam = true;
+								(*l)->addPlayer(GameServer()->m_apPlayers[i]);
+								GameServer()->m_apPlayers[i]->m_myTournamentTeam = (*l);
+								GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_ALONE;
+								break;
+							}
 						}
 					}
-				}
-				if(!foundTeam) {
-					tournamentTeam *newTeam = new tournamentTeam(GameServer()->m_apPlayers[i]->getTournamentTeam());
-					newTeam->addPlayer(GameServer()->m_apPlayers[i]);
-					m_Tournament_Teams.push_back(newTeam);
-					GameServer()->m_apPlayers[i]->m_myTournamentTeam = newTeam;
-					GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+					if(!foundTeam) {
+						tournamentTeam *newTeam = new tournamentTeam(GameServer()->m_apPlayers[i]->getTournamentTeam());
+						newTeam->addPlayer(GameServer()->m_apPlayers[i]);
+						m_Tournament_Teams.push_back(newTeam);
+						GameServer()->m_apPlayers[i]->m_myTournamentTeam = newTeam;
+						GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+					}
 				}
 			}
-		}
 		
-		tournamentNewWave();
+			tournamentNewWave();
 
-		m_Tournament_Phase = 1;
+			m_Tournament_Phase = 1;
+		}
 	}
 
 	if(m_Tournament_Phase == 2) {

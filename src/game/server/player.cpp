@@ -202,6 +202,10 @@ void CPlayer::Tick()
 			m_TeeInfos.m_UseCustomColor = 1;
 		}
 	}
+	if(GameServer()->m_pController->getTournamentPhase() == -1) {
+		GameServer()->SendBroadcast("Waiting or more Players to join", m_ClientID);
+	}
+
 
 	if(GameServer()->m_pController->getTournamentPhase() == 1) {
 		if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE) {
@@ -209,9 +213,9 @@ void CPlayer::Tick()
 				if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_LOST)
 					GameServer()->SendBroadcast("You lost >: better luck next time!", m_ClientID);
 				else if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_WAITING)
-					GameServer()->SendBroadcast("Waiting for a new match...", m_ClientID);
+					GameServer()->SendBroadcast("Waiting for a new ememy...", m_ClientID);
 			}
-		} else GameServer()->SendBroadcast("Waiting for a new game to start!...", m_ClientID);
+		} else GameServer()->SendBroadcast("Waiting for a new game to start...", m_ClientID);
 	}
 
 	if(GameServer()->m_pController->getTournamentPhase() == 2) {
