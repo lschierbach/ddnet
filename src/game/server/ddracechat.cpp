@@ -710,6 +710,12 @@ void CGameContext::ConRank(IConsole::IResult *pResult, void *pUserData)
 void CGameContext::ConLockTeam(IConsole::IResult *pResult, void *pUserData)
 {
 	CGameContext *pSelf = (CGameContext *) pUserData;
+	pSelf->Console()->Print(
+					IConsole::OUTPUT_LEVEL_STANDARD,
+					"print",
+					"Team locking is disabled on this server");
+	/*
+	CGameContext *pSelf = (CGameContext *) pUserData;
 	if (!CheckClientID(pResult->m_ClientID))
 		return;
 
@@ -756,10 +762,17 @@ void CGameContext::ConLockTeam(IConsole::IResult *pResult, void *pUserData)
 				IConsole::OUTPUT_LEVEL_STANDARD,
 				"print",
 				"This team can't be locked");
+				*/
 }
 
 void CGameContext::ConInviteTeam(IConsole::IResult *pResult, void *pUserData)
 {
+	CGameContext *pSelf = (CGameContext *) pUserData;
+	pSelf->Console()->Print(
+					IConsole::OUTPUT_LEVEL_STANDARD,
+					"print",
+					"Teams are disabled");
+	/*
 	CGameContext *pSelf = (CGameContext *)pUserData;
 	CGameControllerDDRace *pController = (CGameControllerDDRace *)pSelf->m_pController;
 	const char *pName = pResult->GetString(0);
@@ -822,10 +835,17 @@ void CGameContext::ConInviteTeam(IConsole::IResult *pResult, void *pUserData)
 	}
 	else
 		pSelf->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "invite", "Can't invite players to this team");
+		*/
 }
 
 void CGameContext::ConJoinTeam(IConsole::IResult *pResult, void *pUserData)
 {
+	CGameContext *pSelf = (CGameContext *) pUserData;
+	pSelf->Console()->Print(
+					IConsole::OUTPUT_LEVEL_STANDARD,
+					"print",
+					"Teams are disabled");
+	/*
 	CGameContext *pSelf = (CGameContext *) pUserData;
 	CGameControllerDDRace *pController = (CGameControllerDDRace *)pSelf->m_pController;
 	if (!CheckClientID(pResult->m_ClientID))
@@ -927,6 +947,7 @@ void CGameContext::ConJoinTeam(IConsole::IResult *pResult, void *pUserData)
 					aBuf);
 		}
 	}
+	*/
 }
 
 void CGameContext::ConMe(IConsole::IResult *pResult, void *pUserData)
@@ -1332,8 +1353,6 @@ void CGameContext::ConProtectedKill(IConsole::IResult *pResult, void *pUserData)
 		return;
 
 	int CurrTime = (pSelf->Server()->Tick() - pChr->m_StartTime) / pSelf->Server()->TickSpeed();
-	if(g_Config.m_SvKillProtection != 0 && CurrTime >= (60 * g_Config.m_SvKillProtection) && pChr->m_DDRaceState == DDRACE_STARTED)
-	{
 			pPlayer->KillCharacter(WEAPON_SELF);
 
 			//char aBuf[64];
@@ -1341,7 +1360,7 @@ void CGameContext::ConProtectedKill(IConsole::IResult *pResult, void *pUserData)
 			//		((CurrTime / 60) > 9) ? "" : "0", CurrTime / 60,
 			//		((CurrTime % 60) > 9) ? "" : "0", CurrTime % 60);
 			//pSelf->SendChatTarget(pResult->m_ClientID, aBuf);
-	}
+	
 }
 #if defined(CONF_SQL)
 void CGameContext::ConPoints(IConsole::IResult *pResult, void *pUserData)

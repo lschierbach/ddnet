@@ -715,10 +715,8 @@ void IGameController::Tick()
 					}
 				}
 			}
-		
-			tournamentNewWave();
-
 			m_Tournament_Phase = 1;
+			tournamentNewWave();
 		}
 	}
 
