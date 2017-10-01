@@ -733,6 +733,7 @@ void CCharacter::Tick()
 		m_pPlayer->m_ForceBalanced = false;
 	}*/
 
+	
 	if (m_Paused)
 		return;
 
@@ -741,21 +742,80 @@ void CCharacter::Tick()
 	m_inScoreField = false;
 	DDRaceTick();
 
-	
 
-	m_Core.m_Input = m_Input;
-	m_Core.Tick(true, false);
+	if(GetPlayer()->m_Tournament_Spectating) {
+		if(m_Input.m_Fire % 2 > 0 && m_Input.m_Fire != m_PrevInput.m_Fire) {
+			bool foundArena = false;
+			for(int i = GetPlayer()->m_Tournament_Spectating_ArenaId; i < GameServer()->m_pController->maxArena; i++) {
+				if(GameServer()->m_pController->m_arenas[i]->isActive() && i != GetPlayer()->m_Tournament_Spectating_ArenaId) {
+					foundArena = true;
+					GetPlayer()->m_Tournament_Spectating_ArenaId = i;
+					break;
+				}
+			}
+			if(!foundArena) {
+				for(int i = 0; i < GetPlayer()->m_Tournament_Spectating_ArenaId; i++) {
+					if(GameServer()->m_pController->m_arenas[i]->isActive() && i != GetPlayer()->m_Tournament_Spectating_ArenaId) {
+						foundArena = true;
+						GetPlayer()->m_Tournament_Spectating_ArenaId = i;
+						break;
+					}
+				}
+			}
+			if(!foundArena) {
+				GameServer()->SendChatTarget(GetPlayer()->GetCID(), "This is the only match you can watch. To leave press \"jump\".");
+			} else {
+				char aBuf[128];
+				str_format(aBuf, sizeof(aBuf), "You are now spectating the match in arena %d", GetPlayer()->m_Tournament_Spectating_ArenaId);
+				GameServer()->SendChatTarget(GetPlayer()->GetCID(), aBuf);
+			}
+		}
+		
+		if(m_Input.m_Hook != m_PrevInput.m_Hook && m_Input.m_Hook == 1) {
+			bool foundArena = false;
+			for(int i = GetPlayer()->m_Tournament_Spectating_ArenaId; i >= 0; i--) {
+				if(GameServer()->m_pController->m_arenas[i]->isActive() && i != GetPlayer()->m_Tournament_Spectating_ArenaId) {
+					foundArena = true;
+					GetPlayer()->m_Tournament_Spectating_ArenaId = i;
+					break;
+				}
+			}
+			if(!foundArena) {
+				for(int i = GameServer()->m_pController->maxArena; i > GetPlayer()->m_Tournament_Spectating_ArenaId; i--) {
+					if(GameServer()->m_pController->m_arenas[i]->isActive() && i != GetPlayer()->m_Tournament_Spectating_ArenaId) {
+						foundArena = true;
+						GetPlayer()->m_Tournament_Spectating_ArenaId = i;
+						break;
+					}
+				}
+			}
+			if(!foundArena) {
+				GameServer()->SendChatTarget(GetPlayer()->GetCID(), "This is the only match you can watch. To leave press \"jump\".");
+			}
+		}
+	}
+	if(!GetPlayer()->m_Tournament_Spectating) {
+		m_Core.m_Input = m_Input;
+		m_Core.Tick(true, false);
+	}
 
 	// handle Weapons
 	HandleWeapons();
 
 	DDRacePostCoreTick();
-
 	
+	if(m_Core.m_HookState == 5 && m_Core.m_HookedPlayer == -1 && m_Core.m_HookTick > Server()->TickSpeed() * 1 && GameServer()->m_pController->getTournamentPhase() != 0)
+		Freeze(1, true);
+
 	// Previnput
 	m_PrevInput = m_Input;
 
 	m_PrevPos = m_Core.m_Pos;
+		
+	if(GetPlayer()->m_Tournament_Spectating && m_Input.m_Jump) {
+		m_pPlayer->m_Tournament_Spectating = false;
+		m_pPlayer->Pause(CPlayer::PAUSE_NONE, false);
+	}
 	return;
 }
 
@@ -1034,18 +1094,21 @@ void CCharacter::Snap(int SnappingClient)
 		CCharacter* SnapChar = GameServer()->GetPlayerChar(SnappingClient);
 		CPlayer* SnapPlayer = GameServer()->m_apPlayers[SnappingClient];
 
-		if((SnapPlayer->GetTeam() == TEAM_SPECTATORS || SnapPlayer->IsPaused()) && SnapPlayer->m_SpectatorID != -1
-			&& !CanCollide(SnapPlayer->m_SpectatorID) && !SnapPlayer->m_ShowOthers)
-			return;
+		if(!SnapPlayer->m_Tournament_Spectating) {
+			if((SnapPlayer->GetTeam() == TEAM_SPECTATORS || SnapPlayer->IsPaused()) && SnapPlayer->m_SpectatorID != -1
+				&& !CanCollide(SnapPlayer->m_SpectatorID) && !SnapPlayer->m_ShowOthers)
+				return;
 
-		if( SnapPlayer->GetTeam() != TEAM_SPECTATORS && !SnapPlayer->IsPaused() && SnapChar && !SnapChar->m_Super
-			&& !CanCollide(SnappingClient) && !SnapPlayer->m_ShowOthers)
-			return;
+			if( SnapPlayer->GetTeam() != TEAM_SPECTATORS && !SnapPlayer->IsPaused() && SnapChar && !SnapChar->m_Super
+				&& !CanCollide(SnappingClient) && !SnapPlayer->m_ShowOthers)
+				return;
 
-		if((SnapPlayer->GetTeam() == TEAM_SPECTATORS || SnapPlayer->IsPaused()) && SnapPlayer->m_SpectatorID == -1
-			&& !CanCollide(SnappingClient) && SnapPlayer->m_SpecTeam)
-			return;
+			if((SnapPlayer->GetTeam() == TEAM_SPECTATORS || SnapPlayer->IsPaused()) && SnapPlayer->m_SpectatorID == -1
+				&& !CanCollide(SnappingClient) && SnapPlayer->m_SpecTeam)
+				return;
+		}
 	}
+
 
 	if (m_Paused)
 		return;
@@ -1605,15 +1668,31 @@ void CCharacter::HandleTiles(int Index)
 	}
 
 	// solo part
-	if(((m_TileIndex == TILE_SOLO_START) || (m_TileFIndex == TILE_SOLO_START)) && !Teams()->m_Core.GetSolo(m_pPlayer->GetCID()))
+	if(((m_TileIndex == TILE_SOLO_START) || (m_TileFIndex == TILE_SOLO_START)) && !Teams()->m_Core.GetSolo(m_pPlayer->GetCID()) && GameServer()->m_pController->getTournamentPhase() == 1)
 	{
-		GameServer()->SendChatTarget(GetPlayer()->GetCID(), "You are now in a solo part");
-		SetSolo(true);
+		if(m_pPlayer->m_Tournament_Team_Status == -1) {
+			m_pPlayer->Pause(CPlayer::PAUSE_PAUSED, false);
+			GameServer()->SendChatTarget(GetPlayer()->GetCID(), "You are now spectating.");
+			GameServer()->SendChatTarget(GetPlayer()->GetCID(), "To navigate press \"Shoot\" or \"Hook\", to leave the view press \"Jump\".");
+			SetSolo(true);
+			m_pPlayer->m_Tournament_Spectating = true;
+		}
+		else if(m_pPlayer->m_Tournament_Team) {
+			if(m_pPlayer->m_myTournamentTeam->m_teamStatus != 0) {
+				m_pPlayer->Pause(CPlayer::PAUSE_PAUSED, false);
+				GameServer()->SendChatTarget(GetPlayer()->GetCID(), "You are now spectating.");
+				GameServer()->SendChatTarget(GetPlayer()->GetCID(), "To navigate press \"Shoot\" or \"Hook\", to leave the view press \"Jump\".");
+				SetSolo(true);
+				m_pPlayer->m_Tournament_Spectating = true;
+			}
+		}
 	}
 	else if(((m_TileIndex == TILE_SOLO_END) || (m_TileFIndex == TILE_SOLO_END)) && Teams()->m_Core.GetSolo(m_pPlayer->GetCID()))
 	{
-		GameServer()->SendChatTarget(GetPlayer()->GetCID(), "You are now out of the solo part");
+		GameServer()->SendChatTarget(GetPlayer()->GetCID(), "You are no longer spectating.");
 		SetSolo(false);
+		m_pPlayer->m_Tournament_Spectating = false;
+		m_pPlayer->Pause(CPlayer::PAUSE_NONE, false);
 	}
 
 	// refill jumps
@@ -2005,6 +2084,7 @@ void CCharacter::DDRaceTick()
 	if(m_Input.m_Direction != 0 || m_Input.m_Jump != 0)
 		m_LastMove = Server()->Tick();
 
+
 	if(m_FreezeTime > 0 || m_FreezeTime == -1)
 	{
 		if (m_FreezeTime % Server()->TickSpeed() == Server()->TickSpeed() - 1 || m_FreezeTime == -1)
@@ -2041,6 +2121,13 @@ void CCharacter::DDRaceTick()
 
 void CCharacter::DDRacePostCoreTick()
 {
+
+	if(GetPlayer()->m_Tournament_Spectating) {
+		if(m_Core.m_NewHook)
+			GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "joo");
+	}
+
+
 	m_Time = (float)(Server()->Tick() - m_StartTime) / ((float)Server()->TickSpeed());
 
 	if (m_pPlayer->m_DefEmoteReset >= 0 && m_pPlayer->m_DefEmoteReset <= Server()->Tick())
@@ -2082,11 +2169,19 @@ void CCharacter::DDRacePostCoreTick()
 	HandleBroadcast();
 }
 
+bool CCharacter::Freeze(int Seconds, bool pGroundHook) {
+	if(pGroundHook) {
+		Freeze(Seconds);
+		m_GroundhookFreeze = true;
+		return true;
+	} return Freeze(Seconds);
+}
+
 bool CCharacter::Freeze(int Seconds)
 {
 	if ((Seconds <= 0 || m_Super || m_FreezeTime == -1 || m_FreezeTime > Seconds * Server()->TickSpeed()) && Seconds != -1)
 		 return false;
-	if (m_FreezeTick < Server()->Tick() - Server()->TickSpeed() || Seconds == -1)
+	if (m_FreezeTick < Server()->Tick() - Server()->TickSpeed() || Seconds == -1 || m_GroundhookFreeze)
 	{
 		for(int i = 0; i < NUM_WEAPONS; i++)
 			if(m_aWeapons[i].m_Got)
@@ -2096,6 +2191,7 @@ bool CCharacter::Freeze(int Seconds)
 		m_Armor = 0;
 		m_FreezeTime = Seconds == -1 ? Seconds : Seconds * Server()->TickSpeed();
 		m_FreezeTick = Server()->Tick();
+		m_GroundhookFreeze = false;
 		return true;
 	}
 	return false;

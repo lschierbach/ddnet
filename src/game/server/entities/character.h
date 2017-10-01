@@ -93,6 +93,8 @@ private:
 	// player controlling this character
 	class CPlayer *m_pPlayer;
 	
+	bool m_GroundhookFreeze;
+
 	bool m_Alive;
 	bool m_Paused;
 	int m_NeededFaketuning;
@@ -179,6 +181,7 @@ private:
 public:
 	CGameTeams* Teams();
 	void Pause(bool Pause);
+	bool Freeze(int Time, bool pGroundHook);
 	bool Freeze(int Time);
 	bool Freeze();
 	bool UnFreeze();
