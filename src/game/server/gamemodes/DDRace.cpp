@@ -65,4 +65,10 @@ void CGameControllerDDRace::InitTeleporter()
 			}
 		}
 	}
+	int i = 0;
+	for(i = 0; i < 32; i++) {
+		if(!m_arenas[i]->isPlayable())
+			break;
+	}
+	maxArena = i;
 }
