@@ -130,10 +130,12 @@ public:
 	int m_Tournament_Team_Status;
 	tournamentTeam * m_myTournamentTeam;
 
+	bool m_Tournament_Spectating;
+	int m_Tournament_Spectating_ArenaId;
 
 	int m_Tournament_Team;	
 	
-	
+	bool m_Tournament_Alone;
 
 	enum {
 		TOURNAMENT_NOTPARTICIPATING=-1,
@@ -178,6 +180,7 @@ public:
 		TIMERTYPE_GAMETIMER_AND_BROADCAST,
 		TIMERTYPE_NONE,
 	};
+
 
 	bool m_DND;
 	int64 m_FirstVoteTick;

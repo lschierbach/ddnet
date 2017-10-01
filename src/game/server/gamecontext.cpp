@@ -1084,7 +1084,16 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 
 			if(pMsg->m_pMessage[0]=='/')
 			{
-				if (str_comp_nocase_num(pMsg->m_pMessage+1, "w ", 2) == 0)
+				if (pMsg->m_pMessage[1] == 'a' && pMsg->m_pMessage[2] == 'l' &&pMsg->m_pMessage[3] == 'o' &&pMsg->m_pMessage[4] == 'n' && pMsg->m_pMessage[5] == 'e') {
+					SendChat(-1, CGameContext::CHAT_ALL, "alone");
+					if(!pPlayer->m_Tournament_Alone)
+						SendChatTarget(pPlayer->GetCID(), "You are now playing alone.");
+					else
+						SendChatTarget(pPlayer->GetCID(), "You are no longer playing alone.");
+					pPlayer->m_Tournament_Alone = !pPlayer->m_Tournament_Alone;
+					return;
+				}
+				else if (str_comp_nocase_num(pMsg->m_pMessage+1, "w ", 2) == 0)
 				{
 					char pWhisperMsg[256];
 					str_copy(pWhisperMsg, pMsg->m_pMessage + 3, 256);

@@ -178,19 +178,15 @@ public:
 	class arena * m_arenas[32];
 
 	int tournamentLastPhaseStartTick;
+
+	int maxArena;
+	int m_TournamentTeamSize;
 };
 
 class arena {
 	private:
 		class CGameContext *m_pGameServer;
 
-		struct teamInfo {
-			tournamentTeam * m_team;
-			int m_score;
-		} m_leftTeam, m_rightTeam;
-
-		int m_arenaStartTick;
-		int m_arenaId;
 
 		bool m_active;
 		static const int m_roundTime = 30;
@@ -202,6 +198,17 @@ class arena {
 		
 	
 	public:
+
+
+		
+		bool prepareFreeze;
+		int m_arenaStartTick;
+		struct teamInfo {
+			tournamentTeam * m_team;
+			int m_score;
+			int m_AntiTimeTick;
+		} m_leftTeam, m_rightTeam;
+
 		void newTeam(tournamentTeam * pTeamLeft, tournamentTeam * pTeamRight, int pArenaStartTick);
 		arena(int pArenaId, class CGameContext * pGameServer);
 		void tick();
@@ -214,6 +221,10 @@ class arena {
 
 		bool portA;
 		bool portB;
+
+		int m_arenaId;
+
+		vec2 averagePlayerPos();
 
 };
 

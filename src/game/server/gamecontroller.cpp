@@ -19,6 +19,7 @@
 
 IGameController::IGameController(class CGameContext *pGameServer)
 {
+	m_TournamentTeamSize = 3;
 	m_pGameServer = pGameServer;
 	m_pServer = m_pGameServer->Server();
 	m_pGameType = "unknown";
@@ -425,9 +426,12 @@ void IGameController::StartRound()
 	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
 	int numPlayers = 0;
 	for(int i = 0; i < MAX_CLIENTS; i++) {
-		if(GameServer()->m_apPlayers[i])
+		if(GameServer()->m_apPlayers[i]) {
 			if(GameServer()->m_apPlayers[i]->GetCharacter())
 				numPlayers++;
+			GameServer()->m_apPlayers[i]->m_Tournament_Spectating = false;
+			GameServer()->m_apPlayers[i]->Pause(CPlayer::PAUSE_NONE, false);
+		}
 	}
 
 	if(numPlayers > 1)
@@ -689,7 +693,11 @@ void IGameController::Tick()
 			StartRound();
 			m_Tournament_Phase = -1;
 		}
+
 		else {
+
+			std::vector<CPlayer *> alonePlayers;
+
 			for(int i = 0; i < MAX_CLIENTS; i++) {
 				if(GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS)
 				{
@@ -707,15 +715,57 @@ void IGameController::Tick()
 						}
 					}
 					if(!foundTeam) {
-						tournamentTeam *newTeam = new tournamentTeam(GameServer()->m_apPlayers[i]->getTournamentTeam());
-						newTeam->addPlayer(GameServer()->m_apPlayers[i]);
-						m_Tournament_Teams.push_back(newTeam);
-						GameServer()->m_apPlayers[i]->m_myTournamentTeam = newTeam;
-						GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+						if(GameServer()->m_apPlayers[i]->getTournamentTeam() > -1 || numPlayers < 4 || GameServer()->m_apPlayers[i]->m_Tournament_Alone) {
+							tournamentTeam *newTeam = new tournamentTeam(GameServer()->m_apPlayers[i]->getTournamentTeam());
+							newTeam->addPlayer(GameServer()->m_apPlayers[i]);
+							m_Tournament_Teams.push_back(newTeam);
+							GameServer()->m_apPlayers[i]->m_myTournamentTeam = newTeam;
+							GameServer()->m_apPlayers[i]->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+							if(GameServer()->m_apPlayers[i]->m_Tournament_Alone) 
+								GameServer()->SendChatTarget(GameServer()->m_apPlayers[i]->GetCID(), "You've choosen to play alone. To get auto-assigned again use /alone");
+						} else {
+							GameServer()->SendChatTarget(GameServer()->m_apPlayers[i]->GetCID(), "You've been assigned to a team. To disable this use /alone");
+							alonePlayers.push_back(GameServer()->m_apPlayers[i]);
+						}
 					}
 				}
 			}
-			m_Tournament_Phase = 1;
+			if(numPlayers > 3) {
+				int teamPushBackNumber = 0;
+				int teamNumber = 9;
+				tournamentTeam * tournamentTeamToAdd;
+				bool pushedBack = false;
+				bool atLeastOneTeam = false;
+				for(std::vector<CPlayer *>::iterator l = alonePlayers.begin(); l != alonePlayers.end(); l++) {
+					pushedBack = false;
+					atLeastOneTeam = true;
+					if(teamPushBackNumber % 3 == 0) {
+						tournamentTeamToAdd = new tournamentTeam(teamNumber);
+						tournamentTeamToAdd->addPlayer((*l));
+						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
+						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neues Team");
+					} else if(teamPushBackNumber % 3 == 2) {
+						tournamentTeamToAdd->addPlayer((*l));
+						m_Tournament_Teams.push_back(tournamentTeamToAdd);
+						pushedBack = true;
+						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
+						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neuer Spieler im Team");
+						teamNumber++;
+					} else {
+						tournamentTeamToAdd->addPlayer((*l));
+						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
+						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
+						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neuer Spieler im Team");
+					}
+					teamPushBackNumber++;
+				}
+				if((teamPushBackNumber - 1) % 3 < 2 && !pushedBack && atLeastOneTeam) {
+					m_Tournament_Teams.push_back(tournamentTeamToAdd);
+				}
+			}
+			m_Tournament_Phase = 1; 
 			tournamentNewWave();
 		}
 	}
@@ -1063,16 +1113,17 @@ void IGameController::tournamentNewWave() {
 		if((*l)->m_teamStatus == tournamentTeam::TEAM_WAITING) {
 			if(lastTeamb) {
 				int i;
-				bool arenaFound = false;
-				for(i = 0; i < 32; i++) {
+				std::vector<arena *> playableArenas;
+
+				for(i = 0; i < maxArena; i++) {
 					if(m_arenas[i]->isPlayable() && !m_arenas[i]->isActive()) {
-						arenaFound = true;
-						break;
+						playableArenas.push_back(m_arenas[i]);
 					}
 				}
-				if(!arenaFound)
+				if(playableArenas.size() < 1)
 					continue;
-				m_arenas[i]->newTeam(lastTeam, (*l), Server()->Tick());
+				int randomIndex = rand() % playableArenas.size();
+				playableArenas[randomIndex]->newTeam(lastTeam, (*l), Server()->Tick());
 				lastTeamb = false;
 				atLeastOneFightOrWait = true;
 			} else {
@@ -1089,6 +1140,9 @@ void IGameController::tournamentNewWave() {
 		for(int i = 0; i < MAX_CLIENTS; ++i) {
 			if(GameServer()->m_apPlayers[i]) {
 				if(GameServer()->m_apPlayers[i]->GetCharacter()) {
+					GameServer()->m_apPlayers[i]->GetCharacter()->SetSolo(false);
+					GameServer()->m_apPlayers[i]->Pause(CPlayer::PAUSE_NONE, false);
+					GameServer()->m_apPlayers[i]->m_Tournament_Spectating = false;
 					GameServer()->m_apPlayers[i]->GetCharacter()->teleToCheckpoint(3);
 				}
 			}
@@ -1134,6 +1188,36 @@ arena::arena(int pArenaId, class CGameContext * pGameServer) {
 	m_postScoreTick = false;
 }
 
+vec2 arena::averagePlayerPos() {
+	vec2 averagePos = vec2(0,0);
+	int numPlayers = 0;
+	if(!m_leftTeam.m_team || !m_rightTeam.m_team || !isActive())
+		return averagePos;
+	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					averagePos += (*k)->GetCharacter()->m_Pos;
+					numPlayers++;
+				}
+			}
+		}
+	}
+	for(std::vector<CPlayer *>::iterator k = m_rightTeam.m_team->getMembers()->begin(); k != m_rightTeam.m_team->getMembers()->end(); k++) {
+		if((*k)) {
+			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
+				if((*k)->GetCharacter()) {
+					averagePos += (*k)->GetCharacter()->m_Pos;
+					numPlayers++;
+				}
+			}
+		}
+	}
+	if(numPlayers == 0)
+		return vec2(0,0);
+	return averagePos / numPlayers;
+}
+
 void arena::newTeam(tournamentTeam * pTeamLeft, tournamentTeam * pTeamRight, int pArenaStartTick) {
 	m_leftTeam.m_team = pTeamLeft;
 	m_rightTeam.m_team = pTeamRight;
@@ -1141,6 +1225,8 @@ void arena::newTeam(tournamentTeam * pTeamLeft, tournamentTeam * pTeamRight, int
 	pTeamRight->m_teamStatus = tournamentTeam::TEAM_INGAME;
 	m_leftTeam.m_score = 0;
 	m_rightTeam.m_score = 0;
+	m_leftTeam.m_AntiTimeTick = 0;
+	m_rightTeam.m_AntiTimeTick = 0;
 	m_arenaStartTick = pArenaStartTick;
 	m_active = true;
 	m_postScoreTick = false;
@@ -1164,13 +1250,16 @@ void arena::resetPositions() {
 		m_pGameServer->m_pController->tournamentNewWave();
 		return;
 	}
-
+	prepareFreeze = true;
 	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
 		if((*k)) {
 			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
 				if((*k)->GetCharacter()) {
 					(*k)->GetCharacter()->tele((m_arenaId*2)+1);
 					(*k)->GetCharacter()->Freeze();
+					(*k)->GetCharacter()->SetSolo(false);
+					(*k)->m_Tournament_Spectating = false;
+					(*k)->Pause(CPlayer::PAUSE_NONE, false);
 				}
 			}
 		}
@@ -1181,6 +1270,9 @@ void arena::resetPositions() {
 				if((*k)->GetCharacter()) {
 					(*k)->GetCharacter()->tele((m_arenaId*2)+2);
 					(*k)->GetCharacter()->Freeze();
+					(*k)->GetCharacter()->SetSolo(false);
+					(*k)->m_Tournament_Spectating = false;
+					(*k)->Pause(CPlayer::PAUSE_NONE, false);
 				}
 			}
 		}
@@ -1206,11 +1298,16 @@ void arena::teleAllTeamsToStart() {
 	}
 }
 
+
+
 void arena::tick() {
 	if(!m_active) return;
 
 	bool hasPlayerA = false;
 	bool hasPlayerB = false;
+
+	int rightTeamSize = 0;
+	int leftTeamSize = 0;
 
 	if((int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()) >= 90) {
 		if(m_leftTeam.m_score > m_rightTeam.m_score)
@@ -1230,11 +1327,24 @@ void arena::tick() {
 			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
 				if((*k)->GetCharacter()) {
 					hasPlayerA = true;
+					leftTeamSize++;
 					if((*k)->GetCharacter()->m_inScoreField && !m_postScoreTick) {
 						m_rightTeam.m_score++;
 						m_postScoreTick = true;
 						resetPositions();
 						return;
+					}
+					if((*k)->GetCharacter()->m_FreezeTick > 0) {
+						if(!prepareFreeze)
+							m_leftTeam.m_AntiTimeTick++;
+					}
+					else {
+						if(prepareFreeze) {
+							m_leftTeam.m_AntiTimeTick = 0;
+							prepareFreeze = false;
+						} else if(m_leftTeam.m_AntiTimeTick > 0) {
+							m_leftTeam.m_AntiTimeTick -= 3;
+						}
 					}
 					char aBuf[256];
 					str_format(aBuf, sizeof(aBuf), "%d:%d - %d", m_leftTeam.m_score, m_rightTeam.m_score, 90 - (int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()));
@@ -1248,12 +1358,25 @@ void arena::tick() {
 		if((*k)) {
 			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
 				if((*k)->GetCharacter()) {
+					rightTeamSize++;
 					hasPlayerB = true;
 					if((*k)->GetCharacter()->m_inScoreField && !m_postScoreTick) {
 						m_leftTeam.m_score++;
 						m_postScoreTick = true;
 						resetPositions();
 						return;
+					}
+					if((*k)->GetCharacter()->m_FreezeTick > 0) {
+						if(!prepareFreeze)
+							m_rightTeam.m_AntiTimeTick++;
+					}
+					else {
+						if(prepareFreeze) {
+							m_rightTeam.m_AntiTimeTick = 0;
+							prepareFreeze = false;
+						} else if(m_rightTeam.m_AntiTimeTick > 0) {
+							m_rightTeam.m_AntiTimeTick -= 3;
+						}
 					}
 					char aBuf[256];
 					str_format(aBuf, sizeof(aBuf), "%d:%d - %d", m_rightTeam.m_score, m_leftTeam.m_score, 90 - (int)((m_pGameServer->Server()->Tick() - m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()));
@@ -1262,6 +1385,8 @@ void arena::tick() {
 			}
 		}
 	}
+	if(m_rightTeam.m_AntiTimeTick > rightTeamSize * 500 || m_leftTeam.m_AntiTimeTick > leftTeamSize * 500 && !prepareFreeze)
+		resetPositions();
 
 	if(!hasPlayerA && hasPlayerB) {
 		m_leftTeam.m_team->m_teamStatus = tournamentTeam::TEAM_LOST;

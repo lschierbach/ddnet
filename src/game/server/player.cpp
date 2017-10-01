@@ -36,6 +36,9 @@ CPlayer::~CPlayer()
 
 void CPlayer::Reset()
 {
+	m_Tournament_Alone = false;
+	m_Tournament_Spectating_ArenaId = 0;
+	m_Tournament_Spectating = false;
 	m_DieTick = Server()->Tick();
 	m_JoinTick = Server()->Tick();
 	if (m_pCharacter)
@@ -170,6 +173,8 @@ void CPlayer::Tick()
 		GameServer()->SendBroadcast("Prepare for battle!", m_ClientID);
 	}
 
+
+
 	if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE || GameServer()->m_pController->getTournamentPhase() == 0) {
 		if(m_Tournament_Team == -1) {
 			m_TeeInfos.m_ColorFeet = getTournamentNormalColorFeet();
@@ -201,14 +206,42 @@ void CPlayer::Tick()
 			m_TeeInfos.m_ColorFeet = 14679808;
 			m_TeeInfos.m_UseCustomColor = 1;
 		}
+		if(m_Tournament_Team == 5) {
+			m_TeeInfos.m_ColorBody = 8650496; //Hellblau
+			m_TeeInfos.m_ColorFeet = 8650496;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 6) {
+			m_TeeInfos.m_ColorBody = 7077632; //Blaugruen
+			m_TeeInfos.m_ColorFeet = 7077632;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 7) {
+			m_TeeInfos.m_ColorBody = 12844800; //Lila
+			m_TeeInfos.m_ColorFeet = 12844800;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+		if(m_Tournament_Team == 8) {
+			m_TeeInfos.m_ColorBody = 15662848; //Pinkrot
+			m_TeeInfos.m_ColorFeet = 15662848;
+			m_TeeInfos.m_UseCustomColor = 1;
+		}
+
 	}
 	if(GameServer()->m_pController->getTournamentPhase() == -1) {
 		GameServer()->SendBroadcast("Waiting or more Players to join", m_ClientID);
 	}
 
-
 	if(GameServer()->m_pController->getTournamentPhase() == 1) {
-		if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE) {
+		if(m_Tournament_Spectating) {
+			char aBuf[256];
+			str_format(aBuf, sizeof(aBuf), "%d:%d - %d", 
+				GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->m_leftTeam.m_score, 
+				GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->m_rightTeam.m_score, 
+				90 - (int)((m_pGameServer->Server()->Tick() - GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->m_arenaStartTick) / m_pGameServer->Server()->TickSpeed()));
+			m_pGameServer->SendBroadcast(aBuf, m_ClientID);
+		}
+		else if(m_Tournament_Team_Status == TOURNAMENT_INTEAM || m_Tournament_Team_Status == TOURNAMENT_ALONE) {
 			if(m_myTournamentTeam) {
 				if(m_myTournamentTeam->m_teamStatus == tournamentTeam::TEAM_LOST)
 					GameServer()->SendBroadcast("You lost >: better luck next time!", m_ClientID);
@@ -300,6 +333,30 @@ void CPlayer::Tick()
 
 void CPlayer::PostTick()
 {
+	if(m_Tournament_Spectating)	{
+		m_SpectatorID = 1;
+		if(m_Tournament_Spectating_ArenaId == -1 || !GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->isActive()) {
+			int i;
+			std::vector<arena *> watchableArenas;
+			for(i = 0; i < GameServer()->m_pController->maxArena; i++) {
+				if(GameServer()->m_pController->m_arenas[i]->isPlayable() && GameServer()->m_pController->m_arenas[i]->isActive()) {
+					watchableArenas.push_back(GameServer()->m_pController->m_arenas[i]);
+				}
+			}
+			if(watchableArenas.size() < 1) {
+				m_Tournament_Spectating_ArenaId = -1;
+			}
+			else {
+				auto it = watchableArenas.begin();
+				std::advance(it, rand() % watchableArenas.size());
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "%d", (*it)->m_arenaId);
+				GameServer()->SendChat(-1, CGameContext::CHAT_ALL, aBuf);
+				m_Tournament_Spectating_ArenaId = (*it)->m_arenaId;
+				m_ViewPos = GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->averagePlayerPos();
+			}
+		} else m_ViewPos = GameServer()->m_pController->m_arenas[m_Tournament_Spectating_ArenaId]->averagePlayerPos();
+	}
 	// update latency value
 	if(m_PlayerFlags&PLAYERFLAG_SCOREBOARD)
 	{
@@ -312,7 +369,8 @@ void CPlayer::PostTick()
 
 	// update view pos for spectators
 	if((m_Team == TEAM_SPECTATORS || m_Paused) && m_SpectatorID != SPEC_FREEVIEW && GameServer()->m_apPlayers[m_SpectatorID] && GameServer()->m_apPlayers[m_SpectatorID]->GetCharacter())
-		m_ViewPos = GameServer()->m_apPlayers[m_SpectatorID]->GetCharacter()->m_Pos;
+		if(!m_Tournament_Spectating)
+			m_ViewPos = GameServer()->m_apPlayers[m_SpectatorID]->GetCharacter()->m_Pos;
 }
 
 void CPlayer::PostPostTick()
@@ -486,7 +544,7 @@ void CPlayer::OnPredictedInput(CNetObj_PlayerInput *NewInput)
 
 	m_NumInputs++;
 
-	if(m_pCharacter && !m_Paused)
+	if(m_pCharacter && (!m_Paused || m_Tournament_Spectating))
 		m_pCharacter->OnPredictedInput(NewInput);
 
 	// Magic number when we can hope that client has successfully identified itself
@@ -517,11 +575,16 @@ void CPlayer::OnDirectInput(CNetObj_PlayerInput *NewInput)
 		return;
 	}
 
+	if(m_Tournament_Spectating) {
+		NewInput->m_TargetX = 0;
+		NewInput->m_TargetY = 0;
+	}
+
 	m_PlayerFlags = NewInput->m_PlayerFlags;
 
 	if(m_pCharacter)
 	{
-		if(!m_Paused)
+		if((!m_Paused || m_Tournament_Spectating))
 			m_pCharacter->OnDirectInput(NewInput);
 		else
 			m_pCharacter->ResetInput();
@@ -530,8 +593,9 @@ void CPlayer::OnDirectInput(CNetObj_PlayerInput *NewInput)
 	if(!m_pCharacter && m_Team != TEAM_SPECTATORS && (NewInput->m_Fire&1))
 		m_Spawning = true;
 
-	if(((!m_pCharacter && m_Team == TEAM_SPECTATORS) || m_Paused) && m_SpectatorID == SPEC_FREEVIEW)
+	if(((!m_pCharacter && m_Team == TEAM_SPECTATORS) || m_Paused) && m_SpectatorID == SPEC_FREEVIEW) {
 		m_ViewPos = vec2(NewInput->m_TargetX, NewInput->m_TargetY);
+	}
 
 	// check for activity
 	if(NewInput->m_Direction || m_LatestActivity.m_TargetX != NewInput->m_TargetX ||
