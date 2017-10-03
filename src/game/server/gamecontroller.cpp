@@ -744,20 +744,17 @@ void IGameController::Tick()
 						tournamentTeamToAdd->addPlayer((*l));
 						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
 						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
-						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neues Team");
 					} else if(teamPushBackNumber % 3 == 2) {
 						tournamentTeamToAdd->addPlayer((*l));
 						m_Tournament_Teams.push_back(tournamentTeamToAdd);
 						pushedBack = true;
 						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
 						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
-						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neuer Spieler im Team");
 						teamNumber++;
 					} else {
 						tournamentTeamToAdd->addPlayer((*l));
 						(*l)->m_myTournamentTeam = tournamentTeamToAdd;
 						(*l)->m_Tournament_Team_Status = CPlayer::TOURNAMENT_INTEAM;
-						GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "neuer Spieler im Team");
 					}
 					teamPushBackNumber++;
 				}
@@ -1251,6 +1248,8 @@ void arena::resetPositions() {
 		return;
 	}
 	prepareFreeze = true;
+	m_rightTeam.m_AntiTimeTick = 0;
+	m_leftTeam.m_AntiTimeTick = 0;
 	for(std::vector<CPlayer *>::iterator k = m_leftTeam.m_team->getMembers()->begin(); k != m_leftTeam.m_team->getMembers()->end(); k++) {
 		if((*k)) {
 			if((*k)->m_Tournament_Team_Status != CPlayer::TOURNAMENT_NOTPARTICIPATING) {
